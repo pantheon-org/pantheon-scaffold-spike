@@ -1,0 +1,79 @@
+name: runner-release
+
+on:
+  push:
+    tags:
+      - "runner-v*"
+
+permissions: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+          - os: macos-latest
+            target: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          version: 2026.10.25
+          cache: false
+      - name: Build the runner
+        env:
+          TARGET: ${{ matrix.target }}
+        run: bun build --compile --target="bun-$TARGET" runner/src/runner.ts --outfile "dist/pantheon-runner-$TARGET"
+      - name: Smoke test the native binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          "./dist/pantheon-runner-$TARGET" --version
+          "./dist/pantheon-runner-$TARGET" render runner/sample.pkl out.txt
+          grep -q 'toolchain = 1.91.0' out.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runner-${{ matrix.target }}
+          path: dist/pantheon-runner-${{ matrix.target }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write checksums
+        working-directory: dist
+        run: |
+          chmod +x pantheon-runner-*
+          sha256sum pantheon-runner-* > checksums.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/pantheon-runner-*
+      - name: Create the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" dist/pantheon-runner-* dist/checksums.txt \
+            --prerelease \
+            --title "$TAG (spike runner pre-release)" \
+            --notes "Spike S.2 test pre-release. Throwaway, deleted after gate A."
