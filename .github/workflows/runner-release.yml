@@ -3,7 +3,7 @@ name: runner-release
 on:
   push:
     tags:
-      - "runner-v*"
+      - "runner-v[0-9]*"
 
 permissions: {}
 
