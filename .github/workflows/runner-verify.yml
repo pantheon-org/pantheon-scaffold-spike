@@ -1,0 +1,48 @@
+name: runner-verify
+
+on:
+  push:
+    tags:
+      - "runner-verify-v*"
+
+permissions: {}
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: verify
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          version: 2026.10.25
+          install: false
+          cache: false
+      - name: Install from the committed lock file, checksums and provenance enforced
+        run: mise install --locked
+      - name: Run the installed runner and render the sample
+        run: |
+          mise x -- pantheon-runner --version
+          mise x -- pantheon-runner render sample.pkl out.txt
+          grep -q 'toolchain = 1.91.0' out.txt
+      - name: A tampered lock checksum must be rejected
+        run: |
+          cp mise.lock mise.lock.good
+          sed -i.bak -E 's/checksum = "sha256:[0-9a-f]{64}"/checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"/g' mise.lock
+          if MISE_DATA_DIR="$RUNNER_TEMP/mise-tampered" mise install --locked; then
+            echo "tampered lock was accepted" >&2
+            exit 1
+          fi
+          cp mise.lock.good mise.lock

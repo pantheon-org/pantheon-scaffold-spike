@@ -1,0 +1,10 @@
+[settings]
+lockfile = true
+locked_verify_provenance = true
+
+[tools]
+pkl = "0.32.2"
+
+[tools."github:pantheon-org/pantheon-scaffold-spike"]
+version = "0.0.1"
+version_prefix = "runner-v"
